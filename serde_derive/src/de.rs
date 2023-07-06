@@ -1366,6 +1366,10 @@ fn deserialize_internally_tagged_enum(
             }
         });
 
+    let default_variant = get_default_variant(variants).unwrap_or(quote! {
+        std::option::Option::None
+    });
+
     let expecting = format!("internally tagged enum {}", params.type_name());
     let expecting = cattrs.expecting().unwrap_or(&expecting);
 
@@ -1376,12 +1380,24 @@ fn deserialize_internally_tagged_enum(
 
         let __tagged = try!(_serde::Deserializer::deserialize_any(
             __deserializer,
-            _serde::__private::de::TaggedContentVisitor::<__Field>::new(#tag, #expecting)));
+            _serde::__private::de::TaggedContentVisitor::<__Field>::new(#tag, #default_variant, #expecting)));
 
         match __tagged.tag {
             #(#variant_arms)*
         }
     }
+}
+
+fn get_default_variant(variants: &[Variant]) -> Option<TokenStream> {
+    for (i, variant) in variants.iter().enumerate() {
+        if variant.attrs.default() {
+            let variant_name = field_i(i);
+            return Some(quote! {
+                std::option::Option::Some(__Field::#variant_name)
+            });
+        }
+    }
+    None
 }
 
 fn deserialize_adjacently_tagged_enum(
