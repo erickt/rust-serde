@@ -3,7 +3,7 @@ use crate::internals::ast::{Container, Data, Field, Style, Variant};
 use crate::internals::{attr, replace_receiver, Ctxt, Derive};
 use crate::{bound, dummy, pretend, this};
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, quote_spanned};
+use quote::{quote, quote_spanned, ToTokens};
 use syn::spanned::Spanned;
 use syn::{parse_quote, Ident, Index, Member};
 
@@ -543,13 +543,7 @@ fn serialize_externally_tagged_variant(
             }
         }
         Style::Newtype => {
-            let field = &variant.fields[0];
-            let mut field_expr = quote!(__field0);
-            if let Some(path) = field.attrs.serialize_with() {
-                field_expr = wrap_serialize_field_with(params, field.ty, path, &field_expr);
-            }
-
-            let span = field.original.span();
+            let (field_expr, span) = newtype_field(params, &variant);
             let func = quote_spanned!(span=> _serde::Serializer::serialize_newtype_variant);
             quote_expr! {
                 #func(
@@ -619,13 +613,7 @@ fn serialize_internally_tagged_variant(
             }
         }
         Style::Newtype => {
-            let field = &variant.fields[0];
-            let mut field_expr = quote!(__field0);
-            if let Some(path) = field.attrs.serialize_with() {
-                field_expr = wrap_serialize_field_with(params, field.ty, path, &field_expr);
-            }
-
-            let span = field.original.span();
+            let (field_expr, span) = newtype_field(params, &variant);
             let func = quote_spanned!(span=> _serde::__private::ser::serialize_tagged_newtype);
             quote_expr! {
                 #func(
@@ -684,13 +672,7 @@ fn serialize_adjacently_tagged_variant(
                 };
             }
             Style::Newtype => {
-                let field = &variant.fields[0];
-                let mut field_expr = quote!(__field0);
-                if let Some(path) = field.attrs.serialize_with() {
-                    field_expr = wrap_serialize_field_with(params, field.ty, path, &field_expr);
-                }
-
-                let span = field.original.span();
+                let (field_expr, span) = newtype_field(params, &variant);
                 let func = quote_spanned!(span=> _serde::ser::SerializeStruct::serialize_field);
                 return quote_block! {
                     let mut __struct = _serde::Serializer::serialize_struct(
@@ -790,13 +772,7 @@ fn serialize_untagged_variant(
             }
         }
         Style::Newtype => {
-            let field = &variant.fields[0];
-            let mut field_expr = quote!(__field0);
-            if let Some(path) = field.attrs.serialize_with() {
-                field_expr = wrap_serialize_field_with(params, field.ty, path, &field_expr);
-            }
-
-            let span = field.original.span();
+            let (field_expr, span) = newtype_field(params, &variant);
             let func = quote_spanned!(span=> _serde::Serialize::serialize);
             quote_expr! {
                 #func(#field_expr, __serializer)
@@ -808,6 +784,23 @@ fn serialize_untagged_variant(
             serialize_struct_variant(StructVariant::Untagged, params, &variant.fields, type_name)
         }
     }
+}
+
+fn newtype_field(params: &Parameters, variant: &Variant) -> (TokenStream, Span) {
+    let (i, field) = variant
+        .fields
+        .iter()
+        .enumerate()
+        .find(|(_, field)| !field.attrs.skip_serializing())
+        .expect("checked in Variant::ser_style");
+
+    let mut field_expr =
+        Ident::new(&format!("__field{}", i), Span::call_site()).into_token_stream();
+    if let Some(path) = field.attrs.serialize_with() {
+        field_expr = wrap_serialize_field_with(params, field.ty, path, &field_expr);
+    }
+
+    (field_expr, field.original.span())
 }
 
 enum TupleVariant<'a> {
