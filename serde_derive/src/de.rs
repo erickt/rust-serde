@@ -1888,7 +1888,7 @@ fn deserialize_internally_tagged_variant(
 
     let variant_ident = &variant.ident;
 
-    match effective_style(variant) {
+    match variant.de_style() {
         Style::Unit => {
             let this_value = &params.this_value;
             let type_name = params.type_name();
@@ -1927,7 +1927,7 @@ fn deserialize_untagged_variant(
 
     let variant_ident = &variant.ident;
 
-    match effective_style(variant) {
+    match variant.de_style() {
         Style::Unit => {
             let this_value = &params.this_value;
             let type_name = params.type_name();
@@ -3075,13 +3075,6 @@ fn expr_is_missing_seq(
         attr::Default::None => quote!(
             return _serde::__private::Err(_serde::de::Error::invalid_length(#index, &#expecting))
         ),
-    }
-}
-
-fn effective_style(variant: &Variant) -> Style {
-    match variant.style {
-        Style::Newtype if variant.fields[0].attrs.skip_deserializing() => Style::Unit,
-        other => other,
     }
 }
 
