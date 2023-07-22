@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use std::ptr;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::{parse_quote, Ident, Index, Member};
+use syn::{parse_quote, Ident, Index};
 
 pub fn expand_derive_deserialize(input: &mut syn::DeriveInput) -> syn::Result<TokenStream> {
     replace_receiver(input);
@@ -1837,10 +1837,16 @@ fn deserialize_externally_tagged_variant(
 ) -> Fragment {
     // Feature https://github.com/serde-rs/serde/issues/1013
     if let Some(path) = variant.attrs.deserialize_with() {
-        let field_tys = variant.fields.iter().map(|field| field.ty);
+        let field_tys = variant.fields.iter().filter_map(|field| {
+            if field.attrs.skip_deserializing() {
+                None
+            } else {
+                Some(field.ty)
+            }
+        });
         let (wrapper, wrapper_ty) = wrap_deserialize_with(params, &quote!((#(#field_tys),*)), path);
 
-        let unwrap_fn = unwrap_to_variant_closure(params, variant, true);
+        let unwrap_fn = unwrap_to_variant_closure(params, variant, cattrs, true);
 
         return quote_block! {
             #wrapper
@@ -1927,7 +1933,7 @@ fn deserialize_untagged_variant(
 ) -> Fragment {
     // Feature https://github.com/serde-rs/serde/issues/1013
     if let Some(path) = variant.attrs.deserialize_with() {
-        let unwrap_fn = unwrap_to_variant_closure(params, variant, false);
+        let unwrap_fn = unwrap_to_variant_closure(params, variant, cattrs, false);
         return quote_block! {
             _serde::__private::Result::map(#path(#deserializer), #unwrap_fn)
         };
@@ -2954,26 +2960,24 @@ fn wrap_deserialize_field_with(
 fn unwrap_to_variant_closure(
     params: &Parameters,
     variant: &Variant,
+    cattrs: &attr::Container,
     with_wrapper: bool,
 ) -> TokenStream {
     let this_value = &params.this_value;
     let variant_ident = &variant.ident;
 
+    let fields = variant
+        .fields
+        .iter()
+        .filter(|field| !field.attrs.skip_deserializing());
     let (arg, wrapper) = if with_wrapper {
         (quote! { __wrap }, quote! { __wrap.value })
     } else {
-        let field_tys = variant.fields.iter().map(|field| field.ty);
+        let field_tys = fields.clone().map(|field| field.ty);
         (quote! { __wrap: (#(#field_tys),*) }, quote! { __wrap })
     };
 
-    let field_access = (0..variant.fields.len()).map(|n| {
-        Member::Unnamed(Index {
-            index: n as u32,
-            span: Span::call_site(),
-        })
-    });
-
-    match variant.style {
+    match variant.de_style() {
         Style::Struct if variant.fields.len() == 1 => {
             let member = &variant.fields[0].member;
             quote! {
@@ -2981,14 +2985,40 @@ fn unwrap_to_variant_closure(
             }
         }
         Style::Struct => {
-            let members = variant.fields.iter().map(|field| &field.member);
+            let mut i = 0;
+            let members = variant.fields.iter().map(|field| {
+                let name = &field.member;
+                let index = Index::from(i);
+                i += 1;
+
+                if field.attrs.skip_deserializing() {
+                    let expr = Expr(expr_is_missing(&field, cattrs));
+                    quote!(#name: #expr)
+                } else {
+                    quote!(#name: #wrapper.#index)
+                }
+            });
             quote! {
-                |#arg| #this_value::#variant_ident { #(#members: #wrapper.#field_access),* }
+                |#arg| #this_value::#variant_ident { #(#members),* }
             }
         }
-        Style::Tuple => quote! {
-            |#arg| #this_value::#variant_ident(#(#wrapper.#field_access),*)
-        },
+        Style::Tuple => {
+            let mut i = 0;
+            let members = variant.fields.iter().map(|field| {
+                let index = Index::from(i);
+                i += 1;
+
+                if field.attrs.skip_deserializing() {
+                    let expr = Expr(expr_is_missing(&field, cattrs));
+                    quote!(#expr)
+                } else {
+                    quote!(#wrapper.#index)
+                }
+            });
+            quote! {
+                |#arg| #this_value::#variant_ident(#(#members),*)
+            }
+        }
         Style::Newtype => quote! {
             |#arg| #this_value::#variant_ident(#wrapper)
         },
