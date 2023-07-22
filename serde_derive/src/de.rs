@@ -1529,6 +1529,7 @@ fn deserialize_adjacently_tagged_enum(
                 Style::Unit => quote! {
                     _serde::__private::Ok(#this_value::#variant_ident)
                 },
+                // Feature https://github.com/serde-rs/serde/issues/1013
                 Style::Newtype if variant.attrs.deserialize_with().is_none() => {
                     let span = variant.original.span();
                     let func = quote_spanned!(span=> _serde::__private::de::missing_field);
@@ -1834,8 +1835,13 @@ fn deserialize_externally_tagged_variant(
     variant: &Variant,
     cattrs: &attr::Container,
 ) -> Fragment {
+    // Feature https://github.com/serde-rs/serde/issues/1013
     if let Some(path) = variant.attrs.deserialize_with() {
-        let (wrapper, wrapper_ty, unwrap_fn) = wrap_deserialize_variant_with(params, variant, path);
+        let field_tys = variant.fields.iter().map(|field| field.ty);
+        let (wrapper, wrapper_ty) = wrap_deserialize_with(params, &quote!((#(#field_tys),*)), path);
+
+        let unwrap_fn = unwrap_to_variant_closure(params, variant, true);
+
         return quote_block! {
             #wrapper
             _serde::__private::Result::map(
@@ -1882,6 +1888,7 @@ fn deserialize_internally_tagged_variant(
     cattrs: &attr::Container,
     deserializer: TokenStream,
 ) -> Fragment {
+    // Feature https://github.com/serde-rs/serde/issues/1013
     if variant.attrs.deserialize_with().is_some() {
         return deserialize_untagged_variant(params, variant, cattrs, deserializer);
     }
@@ -1918,6 +1925,7 @@ fn deserialize_untagged_variant(
     cattrs: &attr::Container,
     deserializer: TokenStream,
 ) -> Fragment {
+    // Feature https://github.com/serde-rs/serde/issues/1013
     if let Some(path) = variant.attrs.deserialize_with() {
         let unwrap_fn = unwrap_to_variant_closure(params, variant, false);
         return quote_block! {
@@ -2940,20 +2948,6 @@ fn wrap_deserialize_field_with(
     deserialize_with: &syn::ExprPath,
 ) -> (TokenStream, TokenStream) {
     wrap_deserialize_with(params, &quote!(#field_ty), deserialize_with)
-}
-
-fn wrap_deserialize_variant_with(
-    params: &Parameters,
-    variant: &Variant,
-    deserialize_with: &syn::ExprPath,
-) -> (TokenStream, TokenStream, TokenStream) {
-    let field_tys = variant.fields.iter().map(|field| field.ty);
-    let (wrapper, wrapper_ty) =
-        wrap_deserialize_with(params, &quote!((#(#field_tys),*)), deserialize_with);
-
-    let unwrap_fn = unwrap_to_variant_closure(params, variant, true);
-
-    (wrapper, wrapper_ty, unwrap_fn)
 }
 
 // Generates closure that converts single input parameter to the final value.
