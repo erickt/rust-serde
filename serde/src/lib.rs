@@ -185,7 +185,9 @@ mod lib {
     pub use self::core::fmt::{self, Debug, Display, Write as FmtWrite};
     pub use self::core::marker::{self, PhantomData};
     pub use self::core::num::Wrapping;
-    pub use self::core::ops::{Bound, Range, RangeFrom, RangeInclusive, RangeTo};
+    pub use self::core::ops::{
+        Bound, Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive,
+    };
     pub use self::core::option::{self, Option};
     pub use self::core::result::{self, Result};
     pub use self::core::time::Duration;
