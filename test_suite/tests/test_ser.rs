@@ -533,6 +533,27 @@ fn test_range_to() {
 }
 
 #[test]
+fn test_range_to_inclusive() {
+    assert_ser_tokens(
+        &(..=3u32),
+        &[
+            Token::Struct {
+                name: "RangeToInclusive",
+                len: 1,
+            },
+            Token::Str("end"),
+            Token::U32(3),
+            Token::StructEnd,
+        ],
+    );
+}
+
+#[test]
+fn test_range_full() {
+    assert_ser_tokens(&(..), &[Token::UnitStruct { name: "RangeFull" }]);
+}
+
+#[test]
 fn test_bound() {
     assert_ser_tokens(
         &Bound::Unbounded::<()>,
