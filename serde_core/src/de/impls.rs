@@ -3003,6 +3003,8 @@ where
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#[cfg(feature = "result")]
+#[cfg_attr(docsrs, doc(cfg(feature = "result")))]
 impl<'de, T, E> Deserialize<'de> for Result<T, E>
 where
     T: Deserialize<'de>,
